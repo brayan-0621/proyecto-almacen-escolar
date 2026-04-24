@@ -1,4 +1,5 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
 import { View } from "react-native";
 import FAB from "../components/FAB";
 import Header from "../components/Header";
@@ -6,6 +7,24 @@ import { AuthProvider, useAuth } from "../context/AuthContext";
 
 function AppContent() {
   const { isLogged } = useAuth();
+  const router = useRouter();
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMounted.current) return;
+    if (!isLogged) {
+      setTimeout(() => {
+        router.replace("/login");
+      }, 0);
+    }
+  }, [isLogged]);
 
   if (!isLogged) {
     return (
