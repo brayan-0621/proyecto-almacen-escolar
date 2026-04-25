@@ -1,50 +1,113 @@
-# Welcome to your Expo app 👋
+# Nella — Almacén de Útiles Escolares
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicación móvil para la gestión interna del almacén **Nella**, especializado en la venta al por mayor de útiles escolares.
+Diseñada para ser operada por una sola persona (el administrador), enfocada en simplicidad y control diario del negocio.
 
-## Get started
+---
 
-1. Install dependencies
+## Descripción
 
-   ```bash
-   npm install
-   ```
+Nella es una app desarrollada con **React Native + Expo** que permite al administrador del almacén:
 
-2. Start the app
+- Visualizar el resumen diario del negocio desde el dashboard
+- Controlar el stock de productos y recibir alertas cuando baja del mínimo
+- Registrar entradas y salidas de mercadería (movimientos)
+- Gestionar clientes (librerías, colegios, distribuidoras, etc.)
+- Gestionar proveedores con su RUC, contacto y dirección
+- Acceder de forma segura mediante login con usuario y contraseña
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## Tecnologías
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+| Tecnología       | Uso                           |
+| ---------------- | ----------------------------- |
+| React Native     | Framework principal           |
+| Expo (~54)       | Entorno de desarrollo y build |
+| Expo Router      | Navegación basada en archivos |
+| TypeScript       | Tipado estático               |
+| React Navigation | Navegación por tabs y stacks  |
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+---
 
-## Get a fresh project
+## Estructura del Proyecto
 
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+proyecto-almacen-escolar/
+├── app/
+│   ├── (tabs)/
+│   │   ├── dashboard.tsx      # Resumen diario, KPIs, alertas y movimientos
+│   │   ├── productos.tsx      # Listado de productos
+│   │   └── movimientos.tsx    # Historial de entradas y salidas
+│   ├── clientes.tsx           # Gestión de clientes
+│   ├── proveedores.tsx        # Gestión de proveedores
+│   ├── login.tsx              # Pantalla de acceso
+│   └── _layout.tsx            # Layout raíz con AuthProvider
+├── components/                # Componentes reutilizables (cards, inputs, botones)
+├── context/
+│   └── AuthContext.tsx        # Contexto de autenticación
+├── styles/                    # Estilos separados por pantalla
+├── constants/
+│   └── theme.ts               # Colores y tipografía global
+└── assets/                    # Imágenes y recursos visuales
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## Instalación y Uso
 
-To learn more about developing your project with Expo, look at the following resources:
+### Requisitos
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- Node.js >= 18
+- npm o yarn
+- Expo Go instalado en el celular (para pruebas rápidas)
 
-## Join the community
+### Pasos
 
-Join our community of developers creating universal apps.
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/tu-usuario/proyecto-almacen-escolar.git
+cd proyecto-almacen-escolar
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+# 2. Instalar dependencias
+npm install
+
+# 3. Iniciar la app
+npx expo start
+```
+
+Luego escanea el QR con la app **Expo Go** desde tu celular, o presiona `a` para abrir en emulador Android.
+
+---
+
+## Acceso
+
+La app usa autenticación local de usuario único:
+
+| Usuario | Contraseña |
+| ------- | ---------- |
+| `admin` | `1234`     |
+
+> Se recomienda cambiar estas credenciales antes de usar la app en producción.
+
+---
+
+## Pantallas
+
+- **Dashboard** — KPIs del día (productos, stock bajo, movimientos, ventas), alertas de stock mínimo y últimos movimientos
+- **Productos** — Catálogo de útiles escolares manejados al por mayor
+- **Movimientos** — Registro de entradas y salidas de mercadería
+- **Clientes** — Directorio de compradores (librerías, colegios, distribuidoras)
+- **Proveedores** — Datos de proveedores con RUC, dirección y contacto
+
+---
+
+## Estado del Proyecto
+
+> En desarrollo — los datos actuales son de prueba (mock data). Próximamente se integrará una base de datos real.
+
+---
+
+## Autor
+
+Proyecto desarrollado para el almacén **Nella**.
