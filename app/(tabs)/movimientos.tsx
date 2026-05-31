@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,17 +13,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FormButton from "../../components/FormButton";
 import FormInput from "../../components/FormInput";
+import { useMovimientos } from "../../hooks/useMovimientos";
 import { styles } from "../../styles/movimientos.styles";
-
-type Movimiento = {
-  id: number;
-  tipo: "entrada" | "salida";
-  descripcion: string;
-  cantidad: number;
-  monto: number;
-  fecha: string;
-  referencia?: string;
-};
 
 type FormMovimiento = {
   tipo: "entrada" | "salida";
@@ -31,81 +23,6 @@ type FormMovimiento = {
   monto: string;
   referencia: string;
 };
-
-const DATOS_INICIALES: Movimiento[] = [
-  {
-    id: 1,
-    tipo: "entrada",
-    descripcion: "Cajas de cuadernos A4",
-    cantidad: 50,
-    monto: 750.0,
-    fecha: "23/04/2026 08:30",
-    referencia: "OC-001",
-  },
-  {
-    id: 2,
-    tipo: "salida",
-    descripcion: "Cajas de lápices 2B",
-    cantidad: 20,
-    monto: 180.0,
-    fecha: "23/04/2026 09:15",
-    referencia: "VTA-001",
-  },
-  {
-    id: 3,
-    tipo: "salida",
-    descripcion: "Resmas de papel bond",
-    cantidad: 30,
-    monto: 310.0,
-    fecha: "23/04/2026 10:00",
-    referencia: "VTA-002",
-  },
-  {
-    id: 4,
-    tipo: "entrada",
-    descripcion: "Cajas de borradores",
-    cantidad: 100,
-    monto: 200.0,
-    fecha: "23/04/2026 11:45",
-    referencia: "OC-002",
-  },
-  {
-    id: 5,
-    tipo: "salida",
-    descripcion: "Cajas de plumones",
-    cantidad: 15,
-    monto: 225.0,
-    fecha: "23/04/2026 13:20",
-    referencia: "VTA-003",
-  },
-  {
-    id: 6,
-    tipo: "entrada",
-    descripcion: "Tijeras escolares",
-    cantidad: 60,
-    monto: 180.0,
-    fecha: "22/04/2026 09:00",
-    referencia: "OC-003",
-  },
-  {
-    id: 7,
-    tipo: "salida",
-    descripcion: "Pegamento en barra",
-    cantidad: 25,
-    monto: 87.5,
-    fecha: "22/04/2026 14:30",
-    referencia: "VTA-004",
-  },
-  {
-    id: 8,
-    tipo: "entrada",
-    descripcion: "Reglas 30cm",
-    cantidad: 80,
-    monto: 120.0,
-    fecha: "21/04/2026 10:15",
-    referencia: "OC-004",
-  },
-];
 
 const ITEMS_POR_PAGINA = 5;
 const formVacio: FormMovimiento = {
@@ -116,14 +33,10 @@ const formVacio: FormMovimiento = {
   referencia: "",
 };
 
-const ahora = () => {
-  const d = new Date();
-  return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}/${d.getFullYear()} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-};
-
 export default function Movimientos() {
   const insets = useSafeAreaInsets();
-  const [movimientos, setMovimientos] = useState<Movimiento[]>(DATOS_INICIALES);
+  const { movimientos, loading, error, recargar } = useMovimientos();
+
   const [busqueda, setBusqueda] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<"todos" | "entrada" | "salida">(
     "todos",
@@ -133,10 +46,22 @@ export default function Movimientos() {
   const [form, setForm] = useState<FormMovimiento>(formVacio);
   const [errores, setErrores] = useState<Partial<FormMovimiento>>({});
 
+  if (loading && !movimientos.length) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#2e6da4" />
+        <Text style={{ marginTop: 10, color: "#555" }}>
+          Cargando movimientos...
+        </Text>
+      </View>
+    );
+  }
+
   const movimientosFiltrados = movimientos.filter((m) => {
     const coincideBusqueda =
       m.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (m.referencia ?? "").toLowerCase().includes(busqueda.toLowerCase());
+      (m.cliente_nombre ?? "").toLowerCase().includes(busqueda.toLowerCase()) ||
+      (m.proveedor_nombre ?? "").toLowerCase().includes(busqueda.toLowerCase());
     const coincideTipo = filtroTipo === "todos" || m.tipo === filtroTipo;
     return coincideBusqueda && coincideTipo;
   });
@@ -158,6 +83,7 @@ export default function Movimientos() {
     setErrores({});
     setModalVisible(true);
   };
+
   const cerrarModal = () => {
     setModalVisible(false);
     setForm(formVacio);
@@ -184,23 +110,11 @@ export default function Movimientos() {
     return Object.keys(e).length === 0;
   };
 
+  // Nota: el modal registra localmente hasta que se integre POST /movimientos al backend
   const guardar = () => {
     if (!validar()) return;
-    const nuevoId = Math.max(...movimientos.map((m) => m.id)) + 1;
-    setMovimientos((prev) => [
-      {
-        id: nuevoId,
-        tipo: form.tipo,
-        descripcion: form.descripcion.trim(),
-        cantidad: Number(form.cantidad),
-        monto: Number(form.monto),
-        fecha: ahora(),
-        referencia: form.referencia.trim() || undefined,
-      },
-      ...prev,
-    ]);
-    setPaginaActual(1);
     cerrarModal();
+    recargar();
   };
 
   return (
@@ -213,12 +127,26 @@ export default function Movimientos() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ERROR DE RED */}
+        {error && (
+          <Text
+            style={{
+              color: "#e67e22",
+              textAlign: "center",
+              padding: 8,
+              fontSize: 13,
+            }}
+          >
+            ⚠️ {error}
+          </Text>
+        )}
+
         {/* BUSCADOR */}
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar por descripción o referencia..."
+            placeholder="Buscar por descripción..."
             value={busqueda}
             onChangeText={(t) => {
               setBusqueda(t);
@@ -279,6 +207,15 @@ export default function Movimientos() {
           </View>
         </View>
 
+        {/* SPINNER recargando */}
+        {loading && movimientos.length > 0 && (
+          <ActivityIndicator
+            size="small"
+            color="#2e6da4"
+            style={{ marginBottom: 8 }}
+          />
+        )}
+
         {/* LISTA */}
         {movimientosPaginados.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -312,15 +249,15 @@ export default function Movimientos() {
                 <Text style={styles.descripcion} numberOfLines={1}>
                   {m.descripcion}
                 </Text>
-                <Text style={styles.sub}>{m.fecha}</Text>
-                <View style={styles.row}>
-                  <Text style={styles.badge}>x{m.cantidad} unid.</Text>
-                  {m.referencia ? (
-                    <Text style={styles.badge}>Ref: {m.referencia}</Text>
-                  ) : null}
-                </View>
+                <Text style={styles.sub}>
+                  {m.fecha ? new Date(m.fecha).toLocaleDateString("es-PE") : ""}
+                  {m.cliente_nombre ? `  ·  ${m.cliente_nombre}` : ""}
+                  {m.proveedor_nombre ? `  ·  ${m.proveedor_nombre}` : ""}
+                </Text>
               </View>
-              <Text style={styles.monto}>S/ {m.monto.toFixed(2)}</Text>
+              <Text style={styles.monto}>
+                S/ {Number(m.monto ?? 0).toFixed(2)}
+              </Text>
             </View>
           ))
         )}

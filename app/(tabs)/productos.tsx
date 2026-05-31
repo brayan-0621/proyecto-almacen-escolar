@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,13 +14,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FormButton from "../../components/FormButton";
 import FormInput from "../../components/FormInput";
 import ProductoCard from "../../components/ProductoCard";
+import { useProductos } from "../../hooks/useProductos";
 import { styles } from "../../styles/productos.styles";
 
 type Producto = {
   id: number;
   nombre: string;
   categoria: string;
-  codigo: string;
+  codigo?: string;
   stock: number;
   stock_minimo: number;
   precio_compra: number;
@@ -47,97 +49,6 @@ const CATEGORIAS = [
   "Otros",
 ];
 
-const DATOS_INICIALES: Producto[] = [
-  {
-    id: 1,
-    nombre: "Cuadernos A4 x50 hojas",
-    categoria: "Papelería",
-    codigo: "CUA-001",
-    stock: 120,
-    stock_minimo: 20,
-    precio_compra: 2.5,
-    precio_venta: 4.0,
-    descripcion: "Cuaderno espiral A4 con tapa dura",
-  },
-  {
-    id: 2,
-    nombre: "Lápices 2B Caja x12",
-    categoria: "Escritura",
-    codigo: "LAP-002",
-    stock: 8,
-    stock_minimo: 15,
-    precio_compra: 6.0,
-    precio_venta: 10.0,
-    descripcion: "Caja de 12 lápices de grafito 2B",
-  },
-  {
-    id: 3,
-    nombre: "Papel Bond A4 x500",
-    categoria: "Papelería",
-    codigo: "PAP-003",
-    stock: 45,
-    stock_minimo: 10,
-    precio_compra: 18.0,
-    precio_venta: 25.0,
-    descripcion: "Resma de papel bond 75g",
-  },
-  {
-    id: 4,
-    nombre: "Borradores blancos",
-    categoria: "Escritura",
-    codigo: "BOR-004",
-    stock: 3,
-    stock_minimo: 10,
-    precio_compra: 0.5,
-    precio_venta: 1.0,
-    descripcion: "Borrador plástico blanco",
-  },
-  {
-    id: 5,
-    nombre: "Plumones gruesos x12",
-    categoria: "Arte",
-    codigo: "PLU-005",
-    stock: 30,
-    stock_minimo: 10,
-    precio_compra: 12.0,
-    precio_venta: 18.0,
-    descripcion: "Plumones de colores punta gruesa",
-  },
-  {
-    id: 6,
-    nombre: "Tijeras escolares",
-    categoria: "Oficina",
-    codigo: "TIJ-006",
-    stock: 4,
-    stock_minimo: 10,
-    precio_compra: 3.0,
-    precio_venta: 5.5,
-    descripcion: "Tijeras punta redonda para niños",
-  },
-  {
-    id: 7,
-    nombre: "Pegamento en barra",
-    categoria: "Oficina",
-    codigo: "PEG-007",
-    stock: 50,
-    stock_minimo: 15,
-    precio_compra: 2.0,
-    precio_venta: 3.5,
-    descripcion: "Barra de pegamento 40g",
-  },
-  {
-    id: 8,
-    nombre: "Reglas 30cm",
-    categoria: "Escritura",
-    codigo: "REG-008",
-    stock: 2,
-    stock_minimo: 10,
-    precio_compra: 1.5,
-    precio_venta: 2.5,
-    descripcion: "Regla plástica transparente 30cm",
-  },
-];
-
 const ITEMS_POR_PAGINA = 4;
 const formVacio: FormProducto = {
   nombre: "",
@@ -152,7 +63,8 @@ const formVacio: FormProducto = {
 
 export default function Productos() {
   const insets = useSafeAreaInsets();
-  const [productos, setProductos] = useState<Producto[]>(DATOS_INICIALES);
+  const { productos, loading, error, recargar, agregar } = useProductos();
+
   const [busqueda, setBusqueda] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("Todas");
   const [paginaActual, setPaginaActual] = useState(1);
@@ -162,11 +74,23 @@ export default function Productos() {
   );
   const [form, setForm] = useState<FormProducto>(formVacio);
   const [errores, setErrores] = useState<Partial<FormProducto>>({});
+  const [guardando, setGuardando] = useState(false);
+
+  if (loading && !productos.length) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#2e6da4" />
+        <Text style={{ marginTop: 10, color: "#555" }}>
+          Cargando productos...
+        </Text>
+      </View>
+    );
+  }
 
   const productosFiltrados = productos.filter((p) => {
     const coincideBusqueda =
-      p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(busqueda.toLowerCase());
+      (p.nombre ?? "").toLowerCase().includes(busqueda.toLowerCase()) ||
+      (p.codigo ?? "").toLowerCase().includes(busqueda.toLowerCase());
     const coincideCategoria =
       categoriaFiltro === "Todas" || p.categoria === categoriaFiltro;
     return coincideBusqueda && coincideCategoria;
@@ -194,11 +118,11 @@ export default function Productos() {
     setForm({
       nombre: producto.nombre,
       categoria: producto.categoria,
-      codigo: producto.codigo,
+      codigo: producto.codigo ?? "",
       stock: String(producto.stock),
       stock_minimo: String(producto.stock_minimo),
-      precio_compra: String(producto.precio_compra),
-      precio_venta: String(producto.precio_venta),
+      precio_compra: String(Number(producto.precio_compra ?? 0)),
+      precio_venta: String(Number(producto.precio_venta ?? 0)),
       descripcion: producto.descripcion ?? "",
     });
     setErrores({});
@@ -215,7 +139,6 @@ export default function Productos() {
   const validar = () => {
     const e: Partial<FormProducto> = {};
     if (!form.nombre.trim()) e.nombre = "El nombre es obligatorio";
-    if (!form.codigo.trim()) e.codigo = "El código es obligatorio";
     if (
       !form.stock.trim() ||
       isNaN(Number(form.stock)) ||
@@ -244,37 +167,26 @@ export default function Productos() {
     return Object.keys(e).length === 0;
   };
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!validar()) return;
-    const datos = {
-      nombre: form.nombre.trim(),
-      categoria: form.categoria,
-      codigo: form.codigo.trim().toUpperCase(),
-      stock: Number(form.stock),
-      stock_minimo: Number(form.stock_minimo),
-      precio_compra: Number(form.precio_compra),
-      precio_venta: Number(form.precio_venta),
-      descripcion: form.descripcion.trim(),
-    };
-    if (productoEditando) {
-      setProductos((prev) =>
-        prev.map((p) =>
-          p.id === productoEditando.id ? { ...p, ...datos } : p,
-        ),
-      );
-    } else {
-      const nuevoId = Math.max(...productos.map((p) => p.id)) + 1;
-      setProductos((prev) => [...prev, { id: nuevoId, ...datos }]);
-      setPaginaActual(Math.ceil((productos.length + 1) / ITEMS_POR_PAGINA));
+    setGuardando(true);
+    try {
+      const datos = {
+        nombre: form.nombre.trim(),
+        categoria: form.categoria,
+        stock: Number(form.stock),
+        stock_minimo: Number(form.stock_minimo),
+        precio_compra: Number(form.precio_compra),
+        precio_venta: Number(form.precio_venta),
+        descripcion: form.descripcion.trim(),
+      };
+      await agregar(datos);
+      cerrarModal();
+    } catch (e: any) {
+      setErrores({ nombre: e.message || "Error al guardar" });
+    } finally {
+      setGuardando(false);
     }
-    cerrarModal();
-  };
-
-  const eliminar = () => {
-    if (!productoEditando) return;
-    setProductos((prev) => prev.filter((p) => p.id !== productoEditando.id));
-    setPaginaActual(1);
-    cerrarModal();
   };
 
   return (
@@ -287,7 +199,19 @@ export default function Productos() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* BUSCADOR */}
+        {error && (
+          <Text
+            style={{
+              color: "#e67e22",
+              textAlign: "center",
+              padding: 8,
+              fontSize: 13,
+            }}
+          >
+            ⚠️ {error}
+          </Text>
+        )}
+
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
@@ -302,7 +226,6 @@ export default function Productos() {
           />
         </View>
 
-        {/* FILTRO POR CATEGORÍA */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -334,7 +257,6 @@ export default function Productos() {
           </View>
         </ScrollView>
 
-        {/* ENCABEZADO */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Productos</Text>
           <View style={styles.headerRight}>
@@ -352,7 +274,14 @@ export default function Productos() {
           </View>
         </View>
 
-        {/* LISTA */}
+        {loading && productos.length > 0 && (
+          <ActivityIndicator
+            size="small"
+            color="#2e6da4"
+            style={{ marginBottom: 8 }}
+          />
+        )}
+
         {productosPaginados.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📦</Text>
@@ -363,12 +292,13 @@ export default function Productos() {
             <ProductoCard
               key={p.id}
               {...p}
+              codigo={p.codigo ?? "S/C"}
+              precio_venta={Number(p.precio_venta ?? 0)}
               onPress={() => abrirModalEditar(p)}
             />
           ))
         )}
 
-        {/* PAGINACIÓN */}
         {totalPaginas > 1 && (
           <View style={styles.pagination}>
             <TouchableOpacity
@@ -414,7 +344,6 @@ export default function Productos() {
         )}
       </ScrollView>
 
-      {/* MODAL */}
       <Modal
         visible={modalVisible}
         transparent
@@ -449,17 +378,6 @@ export default function Productos() {
               <Text style={styles.errorText}>{errores.nombre}</Text>
             )}
 
-            <FormInput
-              placeholder="Código *"
-              value={form.codigo}
-              onChangeText={(t) => setForm({ ...form, codigo: t })}
-              autoCapitalize="characters"
-            />
-            {errores.codigo && (
-              <Text style={styles.errorText}>{errores.codigo}</Text>
-            )}
-
-            {/* SELECTOR CATEGORÍA */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -534,19 +452,16 @@ export default function Productos() {
               onChangeText={(t) => setForm({ ...form, descripcion: t })}
             />
 
-            <FormButton
-              label={productoEditando ? "Guardar cambios" : "Crear producto"}
-              onPress={guardar}
-            />
-            {productoEditando && (
+            {guardando ? (
+              <ActivityIndicator
+                size="large"
+                color="#2e6da4"
+                style={{ marginVertical: 16 }}
+              />
+            ) : (
               <FormButton
-                label="Eliminar producto"
-                onPress={eliminar}
-                style={{
-                  backgroundColor: "#f44336",
-                  marginTop: 8,
-                  marginBottom: 20,
-                }}
+                label={productoEditando ? "Guardar cambios" : "Crear producto"}
+                onPress={guardar}
               />
             )}
           </ScrollView>

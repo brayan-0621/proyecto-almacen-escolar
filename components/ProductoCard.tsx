@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 type Props = {
   nombre: string;
   categoria: string;
-  codigo: string;
+  codigo?: string;
   stock: number;
   stock_minimo: number;
   precio_venta: number;
@@ -13,7 +13,7 @@ type Props = {
 export default function ProductoCard({
   nombre,
   categoria,
-  codigo,
+  codigo = "S/C",
   stock,
   stock_minimo,
   precio_venta,
@@ -38,7 +38,9 @@ export default function ProductoCard({
           <Text style={[styles.badge, stockBajo && styles.badgeAlerta]}>
             {stockBajo ? "⚠️" : "📦"} Stock: {stock}
           </Text>
-          <Text style={styles.badge}>S/ {precio_venta.toFixed(2)}</Text>
+          <Text style={styles.badge}>
+            S/ {Number(precio_venta ?? 0).toFixed(2)}
+          </Text>
         </View>
       </View>
       <Text style={styles.arrow}>›</Text>
