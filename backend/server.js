@@ -67,7 +67,12 @@ app.get("/productos", auth, async (req, res) => {
     const [rows] = await pool.query(
       "SELECT id, nombre_producto AS nombre, categoria, stock, stock_minimo, precio_compra, precio_venta, descripcion FROM producto ORDER BY nombre_producto",
     );
-    res.json(rows);
+    const productos = rows.map((r) => ({
+      ...r,
+      precio_compra: Number(r.precio_compra),
+      precio_venta: Number(r.precio_venta),
+    }));
+    res.json(productos);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -121,15 +126,63 @@ app.get("/movimientos", auth, async (req, res) => {
   }
 });
 app.post("/movimientos", auth, async (req, res) => {
-  const { tipo, descripcion, monto, cliente_id, proveedor_id } = req.body;
+  const { tipo, descripcion, monto, cliente_id, proveedor_id, items } =
+    req.body;
+
+  if (!tipo || !Array.isArray(items) || items.length === 0) {
+    return res
+      .status(400)
+      .json({ error: "tipo e items (con al menos 1 producto) son requeridos" });
+  }
+
+  const conn = await pool.getConnection();
   try {
-    const [r] = await pool.query(
+    await conn.beginTransaction();
+
+    if (tipo === "salida") {
+      for (const item of items) {
+        const [[prod]] = await conn.query(
+          "SELECT stock, nombre_producto FROM producto WHERE id = ? FOR UPDATE",
+          [item.producto_id],
+        );
+        if (!prod) throw new Error(`Producto ${item.producto_id} no existe`);
+        if (prod.stock < item.cantidad) {
+          throw new Error(
+            `Stock insuficiente para "${prod.nombre_producto}" (disponible: ${prod.stock}, solicitado: ${item.cantidad})`,
+          );
+        }
+      }
+    }
+
+    const [r] = await conn.query(
       "INSERT INTO movimiento (tipo, observacion, monto_total, fecha, cliente_id, proveedor_id) VALUES (?,?,?,NOW(),?,?)",
       [tipo, descripcion, monto || 0, cliente_id || null, proveedor_id || null],
     );
+
+    for (const item of items) {
+      const delta = tipo === "salida" ? -item.cantidad : item.cantidad;
+      await conn.query("UPDATE producto SET stock = stock + ? WHERE id = ?", [
+        delta,
+        item.producto_id,
+      ]);
+      await conn.query(
+        "INSERT INTO movimiento_detalle (movimiento_id, producto_id, cantidad, precio_unitario) VALUES (?,?,?,?)",
+        [
+          r.insertId,
+          item.producto_id,
+          item.cantidad,
+          item.precio_unitario || 0,
+        ],
+      );
+    }
+
+    await conn.commit();
     res.status(201).json({ id: r.insertId });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await conn.rollback();
+    res.status(400).json({ error: err.message });
+  } finally {
+    conn.release();
   }
 });
 
@@ -154,6 +207,135 @@ app.get("/dashboard/kpis", auth, async (req, res) => {
   }
 });
 
+app.get("/clientes", auth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, nombre, empresa, dni, telefono FROM cliente ORDER BY nombre",
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get("/proveedores", auth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, nombre, razon_social, ruc, telefono, direccion, email FROM proveedor ORDER BY nombre",
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get("/movimientos", auth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT m.id, m.tipo, m.observacion AS descripcion,
+             m.monto_total AS monto, m.fecha,
+             c.nombre AS cliente_nombre, p.nombre AS proveedor_nombre
+      FROM movimiento m
+      LEFT JOIN cliente c   ON m.cliente_id   = c.id
+      LEFT JOIN proveedor p ON m.proveedor_id = p.id
+      ORDER BY m.fecha DESC LIMIT 100
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// POST /clientes
+app.post("/clientes", auth, async (req, res) => {
+  const { nombre, empresa, dni, telefono } = req.body;
+  if (!nombre || !dni)
+    return res.status(400).json({ error: "nombre y dni son requeridos" });
+  try {
+    const [r] = await pool.query(
+      "INSERT INTO cliente (nombre, empresa, dni, telefono) VALUES (?,?,?,?)",
+      [nombre, empresa || null, dni, telefono || null],
+    );
+    res.status(201).json({ id: r.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /proveedores
+app.post("/proveedores", auth, async (req, res) => {
+  const { nombre, razon_social, ruc, telefono, direccion, email } = req.body;
+  if (!nombre || !ruc)
+    return res.status(400).json({ error: "nombre y ruc son requeridos" });
+  try {
+    const [r] = await pool.query(
+      "INSERT INTO proveedor (nombre, razon_social, ruc, telefono, direccion, email) VALUES (?,?,?,?,?,?)",
+      [
+        nombre,
+        razon_social || null,
+        ruc,
+        telefono || null,
+        direccion || null,
+        email || null,
+      ],
+    );
+    res.status(201).json({ id: r.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// PUT /clientes/:id
+app.put("/clientes/:id", auth, async (req, res) => {
+  const { nombre, empresa, dni, telefono } = req.body;
+  try {
+    await pool.query(
+      "UPDATE cliente SET nombre=?, empresa=?, dni=?, telefono=? WHERE id=?",
+      [nombre, empresa || null, dni, telefono || null, req.params.id],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /clientes/:id
+app.delete("/clientes/:id", auth, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM cliente WHERE id=?", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /proveedores/:id
+app.put("/proveedores/:id", auth, async (req, res) => {
+  const { nombre, razon_social, ruc, telefono, direccion, email } = req.body;
+  try {
+    await pool.query(
+      "UPDATE proveedor SET nombre=?, razon_social=?, ruc=?, telefono=?, direccion=?, email=? WHERE id=?",
+      [
+        nombre,
+        razon_social || null,
+        ruc,
+        telefono || null,
+        direccion || null,
+        email || null,
+        req.params.id,
+      ],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /proveedores/:id
+app.delete("/proveedores/:id", auth, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM proveedor WHERE id=?", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.listen(process.env.PORT || 3000, "0.0.0.0", () =>
   console.log("API en puerto " + (process.env.PORT || 3000)),
 );

@@ -138,3 +138,19 @@ Productos — Catálogo con stock actual; soporta agregar productos desde la app
 Movimientos — Historial de entradas y salidas con cliente/proveedor y monto
 Clientes — Directorio de compradores (librerías, colegios, distribuidoras)
 Proveedores — Datos de proveedores con RUC, dirección y contacto
+
+## APF3 - Semana 15 (Avance de Proyecto Final)
+
+Optimización de rendimiento, manejo de errores y logging, e integración de funcionalidades nativas del dispositivo.
+
+### Funcionalidades implementadas
+
+- **Logging estructurado**: `services/logger.ts` registra eventos INFO/WARN/ERROR con hora, manteniendo un historial en memoria (mini-Sentry local).
+- **Medición de tiempo de API**: `services/medirTiempo.ts` mide la duración de cada llamada; si supera 2000ms se marca como lenta.
+- **Manejo de errores de API**: `services/api.ts` centraliza logging, medición y manejo de errores en `apiGet`/`apiPost`.
+- **Validaciones de datos**: los hooks (`useProductos`, `useMovimientos`, `useDashboard`) validan respuestas nulas y manejan caché corrupta sin crashear.
+- **Permisos y notificaciones**: la app solicita permiso de notificaciones al iniciar (`app/_layout.tsx`) y dispara una notificación local cuando hay productos con stock bajo (`useProductos.ts`).
+- **Optimización de renderizado**: listas de productos y movimientos migradas de `.map()` a `FlatList`, con `React.memo` en `ProductoCard` y `MovimientoCard`, y `useCallback`/`useMemo` en las pantallas.
+- **Dashboard de rendimiento**: nueva tarjeta "⚡ Rendimiento" con tiempos de carga, cantidad de ítems y aviso visual de carga lenta.
+- **Error Boundary global**: `components/ErrorBoundary.tsx` evita pantallas en blanco ante errores inesperados.
+- **Mini-registro de logs**: modal accesible desde el Dashboard que muestra el historial de logs (`logger.getHistorial()`).

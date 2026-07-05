@@ -1,14 +1,59 @@
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import KpiCard from "../../components/KpiCard";
 import { useDashboard } from "../../hooks/useDashboard";
 import { useMovimientos } from "../../hooks/useMovimientos";
+import { useProductos } from "../../hooks/useProductos";
+import { logger } from "../../services/logger";
 import { styles } from "../../styles/dashboard.styles";
 
 export default function Dashboard() {
+  const [logsVisible, setLogsVisible] = useState(false);
+  const historial = logger.getHistorial();
   const insets = useSafeAreaInsets();
   const { kpis, loading: loadingKpis, error: errorKpis } = useDashboard();
-  const { movimientos, loading: loadingMov } = useMovimientos();
+  const {
+    movimientos,
+    loading: loadingMov,
+    slowApi: slowMov,
+    ultimaDuracionMs: msMov,
+  } = useMovimientos();
+  const {
+    productos,
+    slowApi: slowProd,
+    ultimaDuracionMs: msProd,
+  } = useProductos();
+
+  const hayCargaLenta = slowProd || slowMov;
+
+  const rendimientoCards = [
+    {
+      label: "Carga productos",
+      value: msProd !== null ? `${msProd} ms` : "...",
+      icon: "📦",
+      color: slowProd ? "#f44336" : "#2196F3",
+    },
+    {
+      label: "Carga movimientos",
+      value: msMov !== null ? `${msMov} ms` : "...",
+      icon: "🔄",
+      color: slowMov ? "#f44336" : "#2196F3",
+    },
+    {
+      label: "Ítems cargados",
+      value: String(productos.length + movimientos.length),
+      icon: "🧮",
+      color: "#4CAF50",
+    },
+  ];
 
   const kpiCards = [
     {
@@ -79,6 +124,28 @@ export default function Dashboard() {
         </View>
       )}
 
+      <Text style={styles.sectionTitle}>⚡ Rendimiento</Text>
+      <View style={styles.kpiGrid}>
+        {rendimientoCards.map((kpi, i) => (
+          <KpiCard key={i} {...kpi} />
+        ))}
+      </View>
+      {hayCargaLenta && (
+        <Text
+          style={{
+            color: "#f44336",
+            textAlign: "center",
+            padding: 6,
+            marginTop: -12,
+            marginBottom: 12,
+            fontSize: 12,
+            fontWeight: "700",
+          }}
+        >
+          🐢 Carga lenta detectada (más de 2000 ms)
+        </Text>
+      )}
+
       {/* Movimientos recientes */}
       <Text style={styles.sectionTitle}>🔄 Movimientos Recientes</Text>
       {loadingMov ? (
@@ -137,6 +204,84 @@ export default function Dashboard() {
           )}
         </View>
       )}
+      <Modal
+        visible={logsVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLogsVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.4)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              maxHeight: "70%",
+              padding: 16,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#333" }}>
+                Registro de logs
+              </Text>
+              <TouchableOpacity onPress={() => setLogsVisible(false)}>
+                <Text style={{ fontSize: 18 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {historial.length === 0 ? (
+                <Text
+                  style={{ color: "#888", textAlign: "center", padding: 16 }}
+                >
+                  Sin logs registrados aún
+                </Text>
+              ) : (
+                historial.map((log, i) => (
+                  <View
+                    key={i}
+                    style={{
+                      paddingVertical: 8,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#f0f0f0",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "800",
+                        color:
+                          log.nivel === "ERROR"
+                            ? "#f44336"
+                            : log.nivel === "WARN"
+                              ? "#FF9800"
+                              : "#2196F3",
+                      }}
+                    >
+                      [{log.nivel}] {log.hora}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: "#333", marginTop: 2 }}>
+                      {log.mensaje}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

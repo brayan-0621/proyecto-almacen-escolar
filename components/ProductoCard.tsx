@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Props = {
@@ -10,7 +11,7 @@ type Props = {
   onPress: () => void;
 };
 
-export default function ProductoCard({
+function ProductoCard({
   nombre,
   categoria,
   codigo = "S/C",
@@ -47,6 +48,8 @@ export default function ProductoCard({
     </TouchableOpacity>
   );
 }
+
+export default memo(ProductoCard);
 
 const styles = StyleSheet.create({
   card: {

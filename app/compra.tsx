@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -12,15 +13,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FormButton from "../components/FormButton";
+import { useProductos } from "../hooks/useProductos";
+import { useProveedores } from "../hooks/useProveedores";
+import { apiPost } from "../services/api";
 import { styles } from "../styles/compra.styles";
 
-type Proveedor = { id: number; nombre: string; ruc: string };
-type ProductoOpc = {
-  id: number;
-  nombre: string;
-  codigo: string;
-  precio_compra: number;
-};
 type ItemCompra = {
   productoId: number;
   nombre: string;
@@ -29,62 +26,26 @@ type ItemCompra = {
   precio_unitario: number;
 };
 
-const PROVEEDORES: Proveedor[] = [
-  { id: 1, nombre: "Distribuidora Escolar SAC", ruc: "20512345678" },
-  { id: 2, nombre: "Papelería Mayorista Perú", ruc: "20598765432" },
-  { id: 3, nombre: "Útiles del Norte", ruc: "20567891234" },
-  { id: 4, nombre: "Importadora Escolar Lima", ruc: "20534567890" },
-];
-
-const PRODUCTOS_OPC: ProductoOpc[] = [
-  {
-    id: 1,
-    nombre: "Cuadernos A4 x50 hojas",
-    codigo: "CUA-001",
-    precio_compra: 2.5,
-  },
-  {
-    id: 2,
-    nombre: "Lápices 2B Caja x12",
-    codigo: "LAP-002",
-    precio_compra: 6.0,
-  },
-  {
-    id: 3,
-    nombre: "Papel Bond A4 x500",
-    codigo: "PAP-003",
-    precio_compra: 18.0,
-  },
-  {
-    id: 4,
-    nombre: "Borradores blancos",
-    codigo: "BOR-004",
-    precio_compra: 0.5,
-  },
-  {
-    id: 5,
-    nombre: "Plumones gruesos x12",
-    codigo: "PLU-005",
-    precio_compra: 12.0,
-  },
-  { id: 6, nombre: "Tijeras escolares", codigo: "TIJ-006", precio_compra: 3.0 },
-  {
-    id: 7,
-    nombre: "Pegamento en barra",
-    codigo: "PEG-007",
-    precio_compra: 2.0,
-  },
-  { id: 8, nombre: "Reglas 30cm", codigo: "REG-008", precio_compra: 1.5 },
-];
-
 export default function Compra() {
   const insets = useSafeAreaInsets();
-  const [proveedorSel, setProveedorSel] = useState<Proveedor | null>(null);
+  const { productos, loading: loadingProductos } = useProductos();
+  const {
+    proveedores,
+    loading: loadingProveedores,
+    error: errorProveedores,
+  } = useProveedores();
+
+  const [proveedorSel, setProveedorSel] = useState<{
+    id: number;
+    nombre: string;
+    ruc: string;
+  } | null>(null);
   const [items, setItems] = useState<ItemCompra[]>([]);
   const [modalProveedor, setModalProveedor] = useState(false);
   const [modalProducto, setModalProducto] = useState(false);
   const [busqProv, setBusqProv] = useState("");
   const [busqProd, setBusqProd] = useState("");
+  const [enviando, setEnviando] = useState(false);
 
   const subtotal = items.reduce(
     (s, i) => s + i.cantidad * i.precio_unitario,
@@ -93,7 +54,7 @@ export default function Compra() {
   const igv = subtotal * 0.18;
   const total = subtotal + igv;
 
-  const agregarProducto = (p: ProductoOpc) => {
+  const agregarProducto = (p: (typeof productos)[number]) => {
     setItems((prev) => {
       const existe = prev.find((i) => i.productoId === p.id);
       if (existe)
@@ -105,7 +66,7 @@ export default function Compra() {
         {
           productoId: p.id,
           nombre: p.nombre,
-          codigo: p.codigo,
+          codigo: p.codigo ?? "",
           cantidad: 1,
           precio_unitario: p.precio_compra,
         },
@@ -127,7 +88,7 @@ export default function Compra() {
   const eliminarItem = (id: number) =>
     setItems((prev) => prev.filter((i) => i.productoId !== id));
 
-  const confirmar = () => {
+  const confirmar = async () => {
     if (!proveedorSel) {
       Alert.alert("Atención", "Selecciona un proveedor");
       return;
@@ -136,30 +97,52 @@ export default function Compra() {
       Alert.alert("Atención", "Agrega al menos un producto");
       return;
     }
-    Alert.alert(
-      "✅ Compra registrada",
-      `Total: S/ ${total.toFixed(2)}\nProveedor: ${proveedorSel.nombre}`,
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            setProveedorSel(null);
-            setItems([]);
+    setEnviando(true);
+    try {
+      await apiPost("/movimientos", {
+        tipo: "entrada",
+        descripcion: `Compra a ${proveedorSel.nombre}`,
+        monto: total,
+        proveedor_id: proveedorSel.id,
+        items: items.map((i) => ({
+          producto_id: i.productoId,
+          cantidad: i.cantidad,
+          precio_unitario: i.precio_unitario,
+        })),
+      });
+
+      Alert.alert(
+        "✅ Compra registrada",
+        `Total: S/ ${total.toFixed(2)}\nProveedor: ${proveedorSel.nombre}`,
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setProveedorSel(null);
+              setItems([]);
+            },
           },
-        },
-      ],
-    );
+        ],
+      );
+    } catch (e: any) {
+      Alert.alert(
+        "❌ Error al registrar la compra",
+        e.message || "Intenta de nuevo",
+      );
+    } finally {
+      setEnviando(false);
+    }
   };
 
-  const proveedoresFiltrados = PROVEEDORES.filter(
+  const proveedoresFiltrados = proveedores.filter(
     (p) =>
       p.nombre.toLowerCase().includes(busqProv.toLowerCase()) ||
       p.ruc.includes(busqProv),
   );
-  const productosFiltrados = PRODUCTOS_OPC.filter(
+  const productosFiltrados = productos.filter(
     (p) =>
       p.nombre.toLowerCase().includes(busqProd.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(busqProd.toLowerCase()),
+      (p.codigo ?? "").toLowerCase().includes(busqProd.toLowerCase()),
   );
 
   return (
@@ -171,8 +154,22 @@ export default function Compra() {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* PROVEEDOR */}
         <Text style={styles.sectionTitle}>📦 Nueva Compra</Text>
+
+        {errorProveedores && (
+          <Text
+            style={{
+              color: "#e67e22",
+              textAlign: "center",
+              padding: 8,
+              fontSize: 13,
+            }}
+          >
+            ⚠️ {errorProveedores}
+          </Text>
+        )}
+
+        {/* PROVEEDOR */}
         <TouchableOpacity
           style={styles.proveedorBtn}
           onPress={() => setModalProveedor(true)}
@@ -274,8 +271,9 @@ export default function Compra() {
         )}
 
         <FormButton
-          label="✅ Confirmar Compra"
+          label={enviando ? "Guardando..." : "✅ Confirmar Compra"}
           onPress={confirmar}
+          disabled={enviando}
           style={{ backgroundColor: "#4CAF50" }}
         />
       </ScrollView>
@@ -312,22 +310,38 @@ export default function Compra() {
                 placeholderTextColor="#aaa"
               />
             </View>
-            <ScrollView>
-              {proveedoresFiltrados.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={styles.optionRow}
-                  onPress={() => {
-                    setProveedorSel(p);
-                    setModalProveedor(false);
-                    setBusqProv("");
-                  }}
-                >
-                  <Text style={styles.optionNombre}>{p.nombre}</Text>
-                  <Text style={styles.optionSub}>RUC: {p.ruc}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {loadingProveedores ? (
+              <ActivityIndicator
+                size="small"
+                color="#4CAF50"
+                style={{ marginVertical: 20 }}
+              />
+            ) : (
+              <ScrollView>
+                {proveedoresFiltrados.length === 0 ? (
+                  <Text
+                    style={{ color: "#888", textAlign: "center", padding: 16 }}
+                  >
+                    No hay proveedores registrados
+                  </Text>
+                ) : (
+                  proveedoresFiltrados.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setProveedorSel(p);
+                        setModalProveedor(false);
+                        setBusqProv("");
+                      }}
+                    >
+                      <Text style={styles.optionNombre}>{p.nombre}</Text>
+                      <Text style={styles.optionSub}>RUC: {p.ruc}</Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -364,20 +378,36 @@ export default function Compra() {
                 placeholderTextColor="#aaa"
               />
             </View>
-            <ScrollView>
-              {productosFiltrados.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={styles.optionRow}
-                  onPress={() => agregarProducto(p)}
-                >
-                  <Text style={styles.optionNombre}>{p.nombre}</Text>
-                  <Text style={styles.optionSub}>
-                    {p.codigo} · S/ {p.precio_compra.toFixed(2)} c/u
+            {loadingProductos ? (
+              <ActivityIndicator
+                size="small"
+                color="#4CAF50"
+                style={{ marginVertical: 20 }}
+              />
+            ) : (
+              <ScrollView>
+                {productosFiltrados.length === 0 ? (
+                  <Text
+                    style={{ color: "#888", textAlign: "center", padding: 16 }}
+                  >
+                    No hay productos disponibles
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                ) : (
+                  productosFiltrados.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.optionRow}
+                      onPress={() => agregarProducto(p)}
+                    >
+                      <Text style={styles.optionNombre}>{p.nombre}</Text>
+                      <Text style={styles.optionSub}>
+                        {p.codigo ?? "-"} · S/ {p.precio_compra.toFixed(2)} c/u
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>

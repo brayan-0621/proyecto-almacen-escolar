@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -12,16 +13,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FormButton from "../components/FormButton";
+import { useClientes } from "../hooks/useClientes";
+import { useProductos } from "../hooks/useProductos";
+import { apiPost } from "../services/api";
 import { styles } from "../styles/venta.styles";
 
-type Cliente = { id: number; nombre: string; dni: string; empresa?: string };
-type ProductoOpc = {
-  id: number;
-  nombre: string;
-  codigo: string;
-  precio_venta: number;
-  stock: number;
-};
 type ItemVenta = {
   productoId: number;
   nombre: string;
@@ -31,96 +27,27 @@ type ItemVenta = {
   stockMax: number;
 };
 
-const CLIENTES: Cliente[] = [
-  { id: 1, nombre: "Juan Pérez", dni: "12345678", empresa: "Librería Central" },
-  {
-    id: 2,
-    nombre: "María López",
-    dni: "87654321",
-    empresa: "Colegio San José",
-  },
-  {
-    id: 3,
-    nombre: "Carlos Ruiz",
-    dni: "11223344",
-    empresa: "Distribuidora Norte",
-  },
-  { id: 4, nombre: "Ana Torres", dni: "44332211" },
-  {
-    id: 5,
-    nombre: "Pedro Sánchez",
-    dni: "55667788",
-    empresa: "Papelería El Estudiante",
-  },
-];
-
-const PRODUCTOS_OPC: ProductoOpc[] = [
-  {
-    id: 1,
-    nombre: "Cuadernos A4 x50 hojas",
-    codigo: "CUA-001",
-    precio_venta: 4.0,
-    stock: 120,
-  },
-  {
-    id: 2,
-    nombre: "Lápices 2B Caja x12",
-    codigo: "LAP-002",
-    precio_venta: 10.0,
-    stock: 8,
-  },
-  {
-    id: 3,
-    nombre: "Papel Bond A4 x500",
-    codigo: "PAP-003",
-    precio_venta: 25.0,
-    stock: 45,
-  },
-  {
-    id: 4,
-    nombre: "Borradores blancos",
-    codigo: "BOR-004",
-    precio_venta: 1.0,
-    stock: 3,
-  },
-  {
-    id: 5,
-    nombre: "Plumones gruesos x12",
-    codigo: "PLU-005",
-    precio_venta: 18.0,
-    stock: 30,
-  },
-  {
-    id: 6,
-    nombre: "Tijeras escolares",
-    codigo: "TIJ-006",
-    precio_venta: 5.5,
-    stock: 4,
-  },
-  {
-    id: 7,
-    nombre: "Pegamento en barra",
-    codigo: "PEG-007",
-    precio_venta: 3.5,
-    stock: 50,
-  },
-  {
-    id: 8,
-    nombre: "Reglas 30cm",
-    codigo: "REG-008",
-    precio_venta: 2.5,
-    stock: 2,
-  },
-];
-
 export default function Venta() {
   const insets = useSafeAreaInsets();
-  const [clienteSel, setClienteSel] = useState<Cliente | null>(null);
+  const { productos, loading: loadingProductos } = useProductos();
+  const {
+    clientes,
+    loading: loadingClientes,
+    error: errorClientes,
+  } = useClientes();
+
+  const [clienteSel, setClienteSel] = useState<{
+    id: number;
+    nombre: string;
+    dni: string;
+    empresa?: string;
+  } | null>(null);
   const [items, setItems] = useState<ItemVenta[]>([]);
   const [modalCliente, setModalCliente] = useState(false);
   const [modalProducto, setModalProducto] = useState(false);
   const [busqCli, setBusqCli] = useState("");
   const [busqProd, setBusqProd] = useState("");
+  const [enviando, setEnviando] = useState(false);
 
   const subtotal = items.reduce(
     (s, i) => s + i.cantidad * i.precio_unitario,
@@ -129,21 +56,33 @@ export default function Venta() {
   const igv = subtotal * 0.18;
   const total = subtotal + igv;
 
-  const agregarProducto = (p: ProductoOpc) => {
+  const agregarProducto = (p: (typeof productos)[number]) => {
+    if (p.stock <= 0) {
+      Alert.alert("Sin stock", `"${p.nombre}" no tiene stock disponible`);
+      return;
+    }
     setItems((prev) => {
       const existe = prev.find((i) => i.productoId === p.id);
-      if (existe)
+      if (existe) {
+        if (existe.cantidad >= p.stock) {
+          Alert.alert(
+            "Stock máximo",
+            `Solo hay ${p.stock} unidades disponibles`,
+          );
+          return prev;
+        }
         return prev.map((i) =>
           i.productoId === p.id
             ? { ...i, cantidad: Math.min(i.stockMax, i.cantidad + 1) }
             : i,
         );
+      }
       return [
         ...prev,
         {
           productoId: p.id,
           nombre: p.nombre,
-          codigo: p.codigo,
+          codigo: p.codigo ?? "",
           cantidad: 1,
           precio_unitario: p.precio_venta,
           stockMax: p.stock,
@@ -169,36 +108,58 @@ export default function Venta() {
   const eliminarItem = (id: number) =>
     setItems((prev) => prev.filter((i) => i.productoId !== id));
 
-  const confirmar = () => {
+  const confirmar = async () => {
     if (items.length === 0) {
       Alert.alert("Atención", "Agrega al menos un producto");
       return;
     }
-    const clienteNombre = clienteSel ? clienteSel.nombre : "Cliente general";
-    Alert.alert(
-      "✅ Venta registrada",
-      `Total: S/ ${total.toFixed(2)}\nCliente: ${clienteNombre}`,
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            setClienteSel(null);
-            setItems([]);
+    setEnviando(true);
+    try {
+      await apiPost("/movimientos", {
+        tipo: "salida",
+        descripcion: `Venta a ${clienteSel ? clienteSel.nombre : "Cliente general"}`,
+        monto: total,
+        cliente_id: clienteSel?.id ?? null,
+        items: items.map((i) => ({
+          producto_id: i.productoId,
+          cantidad: i.cantidad,
+          precio_unitario: i.precio_unitario,
+        })),
+      });
+
+      const clienteNombre = clienteSel ? clienteSel.nombre : "Cliente general";
+      Alert.alert(
+        "✅ Venta registrada",
+        `Total: S/ ${total.toFixed(2)}\nCliente: ${clienteNombre}`,
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setClienteSel(null);
+              setItems([]);
+            },
           },
-        },
-      ],
-    );
+        ],
+      );
+    } catch (e: any) {
+      Alert.alert(
+        "❌ Error al registrar la venta",
+        e.message || "Intenta de nuevo",
+      );
+    } finally {
+      setEnviando(false);
+    }
   };
 
-  const clientesFiltrados = CLIENTES.filter(
+  const clientesFiltrados = clientes.filter(
     (c) =>
       c.nombre.toLowerCase().includes(busqCli.toLowerCase()) ||
       c.dni.includes(busqCli),
   );
-  const productosFiltrados = PRODUCTOS_OPC.filter(
+  const productosFiltrados = productos.filter(
     (p) =>
       p.nombre.toLowerCase().includes(busqProd.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(busqProd.toLowerCase()),
+      (p.codigo ?? "").toLowerCase().includes(busqProd.toLowerCase()),
   );
 
   return (
@@ -211,6 +172,19 @@ export default function Venta() {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.sectionTitle}>🧾 Nueva Venta</Text>
+
+        {errorClientes && (
+          <Text
+            style={{
+              color: "#e67e22",
+              textAlign: "center",
+              padding: 8,
+              fontSize: 13,
+            }}
+          >
+            ⚠️ {errorClientes}
+          </Text>
+        )}
 
         {/* CLIENTE */}
         <TouchableOpacity
@@ -316,8 +290,9 @@ export default function Venta() {
         )}
 
         <FormButton
-          label="✅ Confirmar Venta"
+          label={enviando ? "Guardando..." : "✅ Confirmar Venta"}
           onPress={confirmar}
+          disabled={enviando}
           style={{ backgroundColor: "#f4a261" }}
         />
       </ScrollView>
@@ -354,25 +329,41 @@ export default function Venta() {
                 placeholderTextColor="#aaa"
               />
             </View>
-            <ScrollView>
-              {clientesFiltrados.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={styles.optionRow}
-                  onPress={() => {
-                    setClienteSel(c);
-                    setModalCliente(false);
-                    setBusqCli("");
-                  }}
-                >
-                  <Text style={styles.optionNombre}>{c.nombre}</Text>
-                  <Text style={styles.optionSub}>
-                    DNI: {c.dni}
-                    {c.empresa ? ` · ${c.empresa}` : ""}
+            {loadingClientes ? (
+              <ActivityIndicator
+                size="small"
+                color="#f4a261"
+                style={{ marginVertical: 20 }}
+              />
+            ) : (
+              <ScrollView>
+                {clientesFiltrados.length === 0 ? (
+                  <Text
+                    style={{ color: "#888", textAlign: "center", padding: 16 }}
+                  >
+                    No hay clientes registrados
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                ) : (
+                  clientesFiltrados.map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setClienteSel(c);
+                        setModalCliente(false);
+                        setBusqCli("");
+                      }}
+                    >
+                      <Text style={styles.optionNombre}>{c.nombre}</Text>
+                      <Text style={styles.optionSub}>
+                        DNI: {c.dni}
+                        {c.empresa ? ` · ${c.empresa}` : ""}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -409,21 +400,37 @@ export default function Venta() {
                 placeholderTextColor="#aaa"
               />
             </View>
-            <ScrollView>
-              {productosFiltrados.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={styles.optionRow}
-                  onPress={() => agregarProducto(p)}
-                >
-                  <Text style={styles.optionNombre}>{p.nombre}</Text>
-                  <Text style={styles.optionSub}>
-                    {p.codigo} · S/ {p.precio_venta.toFixed(2)} · Stock:{" "}
-                    {p.stock}
+            {loadingProductos ? (
+              <ActivityIndicator
+                size="small"
+                color="#f4a261"
+                style={{ marginVertical: 20 }}
+              />
+            ) : (
+              <ScrollView>
+                {productosFiltrados.length === 0 ? (
+                  <Text
+                    style={{ color: "#888", textAlign: "center", padding: 16 }}
+                  >
+                    No hay productos disponibles
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                ) : (
+                  productosFiltrados.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.optionRow}
+                      onPress={() => agregarProducto(p)}
+                    >
+                      <Text style={styles.optionNombre}>{p.nombre}</Text>
+                      <Text style={styles.optionSub}>
+                        {p.codigo ?? "-"} · S/ {p.precio_venta.toFixed(2)} ·
+                        Stock: {p.stock}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>

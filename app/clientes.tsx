@@ -1,99 +1,26 @@
 import { useState } from "react";
 import {
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ClienteCard from "../components/ClienteCard";
 import FormButton from "../components/FormButton";
 import FormInput from "../components/FormInput";
+import { Cliente, ClienteForm, useClientes } from "../hooks/useClientes";
 import { styles } from "../styles/clientes.styles";
-
-// ─── TIPOS ────────────────────────────────────────────────────
-type Cliente = {
-  id: number;
-  nombre: string;
-  empresa?: string;
-  dni: string;
-  telefono: string;
-};
-
-type FormCliente = {
-  nombre: string;
-  empresa: string;
-  dni: string;
-  telefono: string;
-};
-
-// ─── DATOS DE PRUEBA ──────────────────────────────────────────
-const DATOS_INICIALES: Cliente[] = [
-  {
-    id: 1,
-    nombre: "Juan Pérez",
-    empresa: "Librería Central",
-    dni: "12345678",
-    telefono: "987654321",
-  },
-  {
-    id: 2,
-    nombre: "María López",
-    empresa: "Colegio San José",
-    dni: "87654321",
-    telefono: "912345678",
-  },
-  {
-    id: 3,
-    nombre: "Carlos Ruiz",
-    empresa: "Distribuidora Norte",
-    dni: "11223344",
-    telefono: "945678901",
-  },
-  {
-    id: 4,
-    nombre: "Ana Torres",
-    empresa: "",
-    dni: "44332211",
-    telefono: "932109876",
-  },
-  {
-    id: 5,
-    nombre: "Pedro Sánchez",
-    empresa: "Papelería El Estudiante",
-    dni: "55667788",
-    telefono: "965432198",
-  },
-  {
-    id: 6,
-    nombre: "Lucía Flores",
-    empresa: "Colegio Los Andes",
-    dni: "99887766",
-    telefono: "978901234",
-  },
-  {
-    id: 7,
-    nombre: "Miguel Quispe",
-    empresa: "",
-    dni: "33221100",
-    telefono: "921098765",
-  },
-  {
-    id: 8,
-    nombre: "Rosa Mamani",
-    empresa: "Librería Nueva Era",
-    dni: "66778899",
-    telefono: "954321987",
-  },
-];
 
 const ITEMS_POR_PAGINA = 4;
 
-const formVacio: FormCliente = {
+const formVacio: ClienteForm = {
   nombre: "",
   empresa: "",
   dni: "",
@@ -102,17 +29,18 @@ const formVacio: FormCliente = {
 
 export default function Clientes() {
   const insets = useSafeAreaInsets();
+  const { clientes, loading, error, agregar, actualizar, eliminar } =
+    useClientes();
 
-  const [clientes, setClientes] = useState<Cliente[]>(DATOS_INICIALES);
   const [busqueda, setBusqueda] = useState("");
   const [paginaActual, setPaginaActual] = useState(1);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [clienteEditando, setClienteEditando] = useState<Cliente | null>(null);
-  const [form, setForm] = useState<FormCliente>(formVacio);
-  const [errores, setErrores] = useState<Partial<FormCliente>>({});
+  const [form, setForm] = useState<ClienteForm>(formVacio);
+  const [errores, setErrores] = useState<Partial<ClienteForm>>({});
+  const [guardando, setGuardando] = useState(false);
 
-  // ── FILTRO ──────────────────────────────────────────────────
   const clientesFiltrados = clientes.filter(
     (c) =>
       c.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -120,7 +48,6 @@ export default function Clientes() {
       c.dni.includes(busqueda),
   );
 
-  // ── PAGINACIÓN ──────────────────────────────────────────────
   const totalPaginas = Math.ceil(clientesFiltrados.length / ITEMS_POR_PAGINA);
   const clientesPaginados = clientesFiltrados.slice(
     (paginaActual - 1) * ITEMS_POR_PAGINA,
@@ -131,7 +58,6 @@ export default function Clientes() {
     if (pagina >= 1 && pagina <= totalPaginas) setPaginaActual(pagina);
   };
 
-  // ── MODAL ───────────────────────────────────────────────────
   const abrirModalCrear = () => {
     setClienteEditando(null);
     setForm(formVacio);
@@ -158,9 +84,8 @@ export default function Clientes() {
     setErrores({});
   };
 
-  // ── VALIDACIONES ────────────────────────────────────────────
   const validar = () => {
-    const nuevosErrores: Partial<FormCliente> = {};
+    const nuevosErrores: Partial<ClienteForm> = {};
 
     if (!form.nombre.trim()) nuevosErrores.nombre = "El nombre es obligatorio";
 
@@ -177,28 +102,53 @@ export default function Clientes() {
     return Object.keys(nuevosErrores).length === 0;
   };
 
-  // ── GUARDAR ─────────────────────────────────────────────────
-  const guardar = () => {
+  const guardar = async () => {
     if (!validar()) return;
-
-    if (clienteEditando) {
-      setClientes((prev) =>
-        prev.map((c) => (c.id === clienteEditando.id ? { ...c, ...form } : c)),
-      );
-    } else {
-      const nuevoId = Math.max(...clientes.map((c) => c.id)) + 1;
-      setClientes((prev) => [...prev, { id: nuevoId, ...form }]);
-      setPaginaActual(Math.ceil((clientes.length + 1) / ITEMS_POR_PAGINA));
+    setGuardando(true);
+    try {
+      if (clienteEditando) {
+        await actualizar(clienteEditando.id, form);
+      } else {
+        await agregar(form);
+        setPaginaActual(1);
+      }
+      cerrarModal();
+    } catch (e: any) {
+      Alert.alert("❌ Error", e.message || "No se pudo guardar el cliente");
+    } finally {
+      setGuardando(false);
     }
-    cerrarModal();
   };
 
-  // ── ELIMINAR ────────────────────────────────────────────────
-  const eliminar = () => {
+  const confirmarEliminar = () => {
     if (!clienteEditando) return;
-    setClientes((prev) => prev.filter((c) => c.id !== clienteEditando.id));
-    setPaginaActual(1);
-    cerrarModal();
+    Alert.alert(
+      "Eliminar cliente",
+      `¿Seguro que deseas eliminar a "${clienteEditando.nombre}"?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            setGuardando(true);
+            try {
+              await eliminar(clienteEditando.id);
+              setPaginaActual(1);
+              cerrarModal();
+            } catch (e: any) {
+              Alert.alert(
+                "❌ Error",
+                e.message ||
+                  "No se pudo eliminar. Puede tener movimientos asociados.",
+              );
+            } finally {
+              setGuardando(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -211,6 +161,19 @@ export default function Clientes() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {error && (
+          <Text
+            style={{
+              color: "#e67e22",
+              textAlign: "center",
+              padding: 8,
+              fontSize: 13,
+            }}
+          >
+            ⚠️ {error}
+          </Text>
+        )}
+
         {/* BUSCADOR */}
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -226,7 +189,7 @@ export default function Clientes() {
           />
         </View>
 
-        {/* ENCABEZADO con botón + inline ✅ */}
+        {/* ENCABEZADO */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Clientes</Text>
           <View style={styles.headerRight}>
@@ -245,7 +208,13 @@ export default function Clientes() {
         </View>
 
         {/* LISTA */}
-        {clientesPaginados.length === 0 ? (
+        {loading ? (
+          <ActivityIndicator
+            size="large"
+            color="#2e6da4"
+            style={{ marginVertical: 20 }}
+          />
+        ) : clientesPaginados.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>👤</Text>
             <Text style={styles.emptyText}>No se encontraron clientes</Text>
@@ -321,7 +290,6 @@ export default function Clientes() {
         >
           <TouchableOpacity style={{ flex: 1 }} onPress={cerrarModal} />
           <View style={styles.modalContainer}>
-            {/* HEADER MODAL */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {clienteEditando ? "Editar Cliente" : "Nuevo Cliente"}
@@ -331,7 +299,6 @@ export default function Clientes() {
               </TouchableOpacity>
             </View>
 
-            {/* CAMPOS */}
             <FormInput
               placeholder="Nombre completo *"
               value={form.nombre}
@@ -368,14 +335,22 @@ export default function Clientes() {
             )}
 
             <FormButton
-              label={clienteEditando ? "Guardar cambios" : "Crear cliente"}
+              label={
+                guardando
+                  ? "Guardando..."
+                  : clienteEditando
+                    ? "Guardar cambios"
+                    : "Crear cliente"
+              }
               onPress={guardar}
+              disabled={guardando}
             />
 
             {clienteEditando && (
               <FormButton
                 label="Eliminar cliente"
-                onPress={eliminar}
+                onPress={confirmarEliminar}
+                disabled={guardando}
                 style={{ backgroundColor: "#f44336", marginTop: 8 }}
               />
             )}

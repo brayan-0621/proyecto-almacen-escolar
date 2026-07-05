@@ -1,10 +1,12 @@
-import { useState } from "react";
+// Ubicación: app/(tabs)/movimientos.tsx
+
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,7 +15,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FormButton from "../../components/FormButton";
 import FormInput from "../../components/FormInput";
-import { useMovimientos } from "../../hooks/useMovimientos";
+import MovimientoCard from "../../components/MovimientoCard";
+import { useMovimientos, type Movimiento } from "../../hooks/useMovimientos";
 import { styles } from "../../styles/movimientos.styles";
 
 type FormMovimiento = {
@@ -46,6 +49,7 @@ export default function Movimientos() {
   const [form, setForm] = useState<FormMovimiento>(formVacio);
   const [errores, setErrores] = useState<Partial<FormMovimiento>>({});
 
+  // Estado de carga inicial
   if (loading && !movimientos.length) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -57,22 +61,31 @@ export default function Movimientos() {
     );
   }
 
-  const movimientosFiltrados = movimientos.filter((m) => {
-    const coincideBusqueda =
-      m.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (m.cliente_nombre ?? "").toLowerCase().includes(busqueda.toLowerCase()) ||
-      (m.proveedor_nombre ?? "").toLowerCase().includes(busqueda.toLowerCase());
-    const coincideTipo = filtroTipo === "todos" || m.tipo === filtroTipo;
-    return coincideBusqueda && coincideTipo;
-  });
+  const movimientosFiltrados = useMemo(() => {
+    return movimientos.filter((m) => {
+      const coincideBusqueda =
+        m.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
+        (m.cliente_nombre ?? "")
+          .toLowerCase()
+          .includes(busqueda.toLowerCase()) ||
+        (m.proveedor_nombre ?? "")
+          .toLowerCase()
+          .includes(busqueda.toLowerCase());
+      const coincideTipo = filtroTipo === "todos" || m.tipo === filtroTipo;
+      return coincideBusqueda && coincideTipo;
+    });
+  }, [movimientos, busqueda, filtroTipo]);
 
   const totalPaginas = Math.ceil(
     movimientosFiltrados.length / ITEMS_POR_PAGINA,
   );
-  const movimientosPaginados = movimientosFiltrados.slice(
-    (paginaActual - 1) * ITEMS_POR_PAGINA,
-    paginaActual * ITEMS_POR_PAGINA,
-  );
+
+  const movimientosPaginados = useMemo(() => {
+    return movimientosFiltrados.slice(
+      (paginaActual - 1) * ITEMS_POR_PAGINA,
+      paginaActual * ITEMS_POR_PAGINA,
+    );
+  }, [movimientosFiltrados, paginaActual]);
 
   const cambiarPagina = (p: number) => {
     if (p >= 1 && p <= totalPaginas) setPaginaActual(p);
@@ -117,196 +130,174 @@ export default function Movimientos() {
     recargar();
   };
 
+  const renderItem = useCallback(
+    ({ item }: { item: Movimiento }) => <MovimientoCard {...item} />,
+    [],
+  );
+
+  const keyExtractor = useCallback((item: Movimiento) => String(item.id), []);
+
+  const ListaEncabezado = () => (
+    <>
+      {/* ERROR DE RED */}
+      {error && (
+        <Text
+          style={{
+            color: "#e67e22",
+            textAlign: "center",
+            padding: 8,
+            fontSize: 13,
+          }}
+        >
+          ⚠️ {error}
+        </Text>
+      )}
+
+      {/* BUSCADOR */}
+      <View style={styles.searchContainer}>
+        <Text style={styles.searchIcon}>🔍</Text>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar por descripción..."
+          value={busqueda}
+          onChangeText={(t) => {
+            setBusqueda(t);
+            setPaginaActual(1);
+          }}
+          placeholderTextColor="#aaa"
+        />
+      </View>
+
+      {/* FILTRO */}
+      <View style={styles.filterContainer}>
+        {(["todos", "entrada", "salida"] as const).map((tipo) => (
+          <TouchableOpacity
+            key={tipo}
+            style={[
+              styles.filterChip,
+              filtroTipo === tipo && styles.filterChipActive,
+              tipo === "entrada" &&
+                filtroTipo === tipo &&
+                styles.filterChipEntrada,
+              tipo === "salida" &&
+                filtroTipo === tipo &&
+                styles.filterChipSalida,
+            ]}
+            onPress={() => {
+              setFiltroTipo(tipo);
+              setPaginaActual(1);
+            }}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                filtroTipo === tipo && styles.filterChipTextActive,
+              ]}
+            >
+              {tipo === "todos"
+                ? "🔄 Todos"
+                : tipo === "entrada"
+                  ? "▲ Entradas"
+                  : "▼ Salidas"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* ENCABEZADO */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Movimientos</Text>
+        <View style={styles.headerRight}>
+          <View style={styles.totalBadge}>
+            <Text style={styles.totalText}>
+              {movimientosFiltrados.length} registros
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.addButton} onPress={abrirModal}>
+            <Text style={styles.addButtonText}>+ Nuevo</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {loading && movimientos.length > 0 && (
+        <ActivityIndicator
+          size="small"
+          color="#2e6da4"
+          style={{ marginBottom: 8 }}
+        />
+      )}
+    </>
+  );
+
+  const ListaPie = () => (
+    <>
+      {totalPaginas > 1 && (
+        <View style={styles.pagination}>
+          <TouchableOpacity
+            style={[
+              styles.pageButton,
+              paginaActual === 1 && styles.pageButtonDisabled,
+            ]}
+            onPress={() => cambiarPagina(paginaActual - 1)}
+            disabled={paginaActual === 1}
+          >
+            <Text style={styles.pageButtonText}>‹</Text>
+          </TouchableOpacity>
+          {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((p) => (
+            <TouchableOpacity
+              key={p}
+              style={[
+                styles.pageButton,
+                paginaActual === p && styles.pageButtonActive,
+              ]}
+              onPress={() => cambiarPagina(p)}
+            >
+              <Text
+                style={[
+                  styles.pageButtonText,
+                  paginaActual === p && styles.pageButtonTextActive,
+                ]}
+              >
+                {p}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity
+            style={[
+              styles.pageButton,
+              paginaActual === totalPaginas && styles.pageButtonDisabled,
+            ]}
+            onPress={() => cambiarPagina(paginaActual + 1)}
+            disabled={paginaActual === totalPaginas}
+          >
+            <Text style={styles.pageButtonText}>›</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </>
+  );
+
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScrollView
+      <FlatList
+        data={movimientosPaginados}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={ListaEncabezado}
+        ListFooterComponent={ListaPie}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyIcon}>🔄</Text>
+            <Text style={styles.emptyText}>No se encontraron movimientos</Text>
+          </View>
+        }
         contentContainerStyle={[
           styles.content,
           { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-      >
-        {/* ERROR DE RED */}
-        {error && (
-          <Text
-            style={{
-              color: "#e67e22",
-              textAlign: "center",
-              padding: 8,
-              fontSize: 13,
-            }}
-          >
-            ⚠️ {error}
-          </Text>
-        )}
-
-        {/* BUSCADOR */}
-        <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar por descripción..."
-            value={busqueda}
-            onChangeText={(t) => {
-              setBusqueda(t);
-              setPaginaActual(1);
-            }}
-            placeholderTextColor="#aaa"
-          />
-        </View>
-
-        {/* FILTRO */}
-        <View style={styles.filterContainer}>
-          {(["todos", "entrada", "salida"] as const).map((tipo) => (
-            <TouchableOpacity
-              key={tipo}
-              style={[
-                styles.filterChip,
-                filtroTipo === tipo && styles.filterChipActive,
-                tipo === "entrada" &&
-                  filtroTipo === tipo &&
-                  styles.filterChipEntrada,
-                tipo === "salida" &&
-                  filtroTipo === tipo &&
-                  styles.filterChipSalida,
-              ]}
-              onPress={() => {
-                setFiltroTipo(tipo);
-                setPaginaActual(1);
-              }}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  filtroTipo === tipo && styles.filterChipTextActive,
-                ]}
-              >
-                {tipo === "todos"
-                  ? "🔄 Todos"
-                  : tipo === "entrada"
-                    ? "▲ Entradas"
-                    : "▼ Salidas"}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ENCABEZADO */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Movimientos</Text>
-          <View style={styles.headerRight}>
-            <View style={styles.totalBadge}>
-              <Text style={styles.totalText}>
-                {movimientosFiltrados.length} registros
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.addButton} onPress={abrirModal}>
-              <Text style={styles.addButtonText}>+ Nuevo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* SPINNER recargando */}
-        {loading && movimientos.length > 0 && (
-          <ActivityIndicator
-            size="small"
-            color="#2e6da4"
-            style={{ marginBottom: 8 }}
-          />
-        )}
-
-        {/* LISTA */}
-        {movimientosPaginados.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>🔄</Text>
-            <Text style={styles.emptyText}>No se encontraron movimientos</Text>
-          </View>
-        ) : (
-          movimientosPaginados.map((m) => (
-            <View key={m.id} style={styles.card}>
-              <View
-                style={[
-                  styles.tipoBadge,
-                  m.tipo === "entrada" ? styles.entrada : styles.salida,
-                ]}
-              >
-                <Text style={styles.tipoIcon}>
-                  {m.tipo === "entrada" ? "▲" : "▼"}
-                </Text>
-                <Text
-                  style={[
-                    styles.tipoText,
-                    m.tipo === "entrada"
-                      ? styles.tipoTextEntrada
-                      : styles.tipoTextSalida,
-                  ]}
-                >
-                  {m.tipo === "entrada" ? "Entrada" : "Salida"}
-                </Text>
-              </View>
-              <View style={styles.info}>
-                <Text style={styles.descripcion} numberOfLines={1}>
-                  {m.descripcion}
-                </Text>
-                <Text style={styles.sub}>
-                  {m.fecha ? new Date(m.fecha).toLocaleDateString("es-PE") : ""}
-                  {m.cliente_nombre ? `  ·  ${m.cliente_nombre}` : ""}
-                  {m.proveedor_nombre ? `  ·  ${m.proveedor_nombre}` : ""}
-                </Text>
-              </View>
-              <Text style={styles.monto}>
-                S/ {Number(m.monto ?? 0).toFixed(2)}
-              </Text>
-            </View>
-          ))
-        )}
-
-        {/* PAGINACIÓN */}
-        {totalPaginas > 1 && (
-          <View style={styles.pagination}>
-            <TouchableOpacity
-              style={[
-                styles.pageButton,
-                paginaActual === 1 && styles.pageButtonDisabled,
-              ]}
-              onPress={() => cambiarPagina(paginaActual - 1)}
-              disabled={paginaActual === 1}
-            >
-              <Text style={styles.pageButtonText}>‹</Text>
-            </TouchableOpacity>
-            {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  styles.pageButton,
-                  paginaActual === p && styles.pageButtonActive,
-                ]}
-                onPress={() => cambiarPagina(p)}
-              >
-                <Text
-                  style={[
-                    styles.pageButtonText,
-                    paginaActual === p && styles.pageButtonTextActive,
-                  ]}
-                >
-                  {p}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={[
-                styles.pageButton,
-                paginaActual === totalPaginas && styles.pageButtonDisabled,
-              ]}
-              onPress={() => cambiarPagina(paginaActual + 1)}
-              disabled={paginaActual === totalPaginas}
-            >
-              <Text style={styles.pageButtonText}>›</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
+      />
 
       {/* MODAL */}
       <Modal

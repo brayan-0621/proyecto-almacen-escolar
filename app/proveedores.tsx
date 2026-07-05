@@ -1,5 +1,7 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,82 +15,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FormButton from "../components/FormButton";
 import FormInput from "../components/FormInput";
 import ProveedorCard from "../components/ProveedorCard";
+import {
+  Proveedor,
+  ProveedorForm,
+  useProveedores,
+} from "../hooks/useProveedores";
 import { styles } from "../styles/proveedores.styles";
-
-// ─── TIPOS ────────────────────────────────────────────────────
-type Proveedor = {
-  id: number;
-  nombre: string;
-  razon_social: string;
-  ruc: string;
-  telefono: string;
-  direccion: string;
-  email: string;
-};
-
-type FormProveedor = Omit<Proveedor, "id">;
-
-// ─── DATOS DE PRUEBA ──────────────────────────────────────────
-const DATOS_INICIALES: Proveedor[] = [
-  {
-    id: 1,
-    nombre: "Distribuidora Escolar SAC",
-    razon_social: "Distribuidora Escolar S.A.C.",
-    ruc: "20512345678",
-    telefono: "014567890",
-    direccion: "Av. Industrial 123, Lima",
-    email: "ventas@distescolar.com",
-  },
-  {
-    id: 2,
-    nombre: "Papelería Mayorista Perú",
-    razon_social: "Papelería Mayorista Perú E.I.R.L.",
-    ruc: "20598765432",
-    telefono: "013456789",
-    direccion: "Jr. Comercio 456, Lima",
-    email: "contacto@papelmay.pe",
-  },
-  {
-    id: 3,
-    nombre: "Útiles del Norte",
-    razon_social: "Útiles del Norte S.R.L.",
-    ruc: "20567891234",
-    telefono: "044123456",
-    direccion: "Av. España 789, Trujillo",
-    email: "info@utilesnorte.com",
-  },
-  {
-    id: 4,
-    nombre: "Importadora Escolar Lima",
-    razon_social: "Importadora Escolar Lima S.A.",
-    ruc: "20534567890",
-    telefono: "016789012",
-    direccion: "Calle Los Pinos 321, Lima",
-    email: "pedidos@impescolar.com",
-  },
-  {
-    id: 5,
-    nombre: "Mayorista Office Perú",
-    razon_social: "Mayorista Office Perú S.A.C.",
-    ruc: "20523456789",
-    telefono: "015678901",
-    direccion: "Av. Javier Prado 654, Lima",
-    email: "ventas@officepe.com",
-  },
-  {
-    id: 6,
-    nombre: "Comercial Andina SRL",
-    razon_social: "Comercial Andina S.R.L.",
-    ruc: "20556789012",
-    telefono: "084234567",
-    direccion: "Av. Sol 147, Cusco",
-    email: "andina@comercial.pe",
-  },
-];
 
 const ITEMS_POR_PAGINA = 4;
 
-const formVacio: FormProveedor = {
+const formVacio: ProveedorForm = {
   nombre: "",
   razon_social: "",
   ruc: "",
@@ -99,8 +35,9 @@ const formVacio: FormProveedor = {
 
 export default function Proveedores() {
   const insets = useSafeAreaInsets();
+  const { proveedores, loading, error, agregar, actualizar, eliminar } =
+    useProveedores();
 
-  const [proveedores, setProveedores] = useState<Proveedor[]>(DATOS_INICIALES);
   const [busqueda, setBusqueda] = useState("");
   const [paginaActual, setPaginaActual] = useState(1);
 
@@ -108,10 +45,10 @@ export default function Proveedores() {
   const [proveedorEditando, setProveedorEditando] = useState<Proveedor | null>(
     null,
   );
-  const [form, setForm] = useState<FormProveedor>(formVacio);
-  const [errores, setErrores] = useState<Partial<FormProveedor>>({});
+  const [form, setForm] = useState<ProveedorForm>(formVacio);
+  const [errores, setErrores] = useState<Partial<ProveedorForm>>({});
+  const [guardando, setGuardando] = useState(false);
 
-  // ── FILTRO ──────────────────────────────────────────────────
   const proveedoresFiltrados = proveedores.filter(
     (p) =>
       p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -119,7 +56,6 @@ export default function Proveedores() {
       p.ruc.includes(busqueda),
   );
 
-  // ── PAGINACIÓN ──────────────────────────────────────────────
   const totalPaginas = Math.ceil(
     proveedoresFiltrados.length / ITEMS_POR_PAGINA,
   );
@@ -132,7 +68,6 @@ export default function Proveedores() {
     if (pagina >= 1 && pagina <= totalPaginas) setPaginaActual(pagina);
   };
 
-  // ── MODAL ───────────────────────────────────────────────────
   const abrirModalCrear = () => {
     setProveedorEditando(null);
     setForm(formVacio);
@@ -161,9 +96,8 @@ export default function Proveedores() {
     setErrores({});
   };
 
-  // ── VALIDACIONES ────────────────────────────────────────────
   const validar = () => {
-    const nuevosErrores: Partial<FormProveedor> = {};
+    const nuevosErrores: Partial<ProveedorForm> = {};
 
     if (!form.nombre.trim()) nuevosErrores.nombre = "El nombre es obligatorio";
 
@@ -176,10 +110,7 @@ export default function Proveedores() {
 
     if (!form.telefono.trim())
       nuevosErrores.telefono = "El teléfono es obligatorio";
-    else if (
-      !/^\d{9,9}$/.test(form.telefono) &&
-      !/^\d{6,9}$/.test(form.telefono)
-    )
+    else if (!/^\d{6,9}$/.test(form.telefono))
       nuevosErrores.telefono = "El teléfono debe tener entre 6 y 9 dígitos";
 
     if (!form.direccion.trim())
@@ -193,30 +124,53 @@ export default function Proveedores() {
     return Object.keys(nuevosErrores).length === 0;
   };
 
-  // ── GUARDAR ─────────────────────────────────────────────────
-  const guardar = () => {
+  const guardar = async () => {
     if (!validar()) return;
-
-    if (proveedorEditando) {
-      setProveedores((prev) =>
-        prev.map((p) =>
-          p.id === proveedorEditando.id ? { ...p, ...form } : p,
-        ),
-      );
-    } else {
-      const nuevoId = Math.max(...proveedores.map((p) => p.id)) + 1;
-      setProveedores((prev) => [...prev, { id: nuevoId, ...form }]);
-      setPaginaActual(Math.ceil((proveedores.length + 1) / ITEMS_POR_PAGINA));
+    setGuardando(true);
+    try {
+      if (proveedorEditando) {
+        await actualizar(proveedorEditando.id, form);
+      } else {
+        await agregar(form);
+        setPaginaActual(1);
+      }
+      cerrarModal();
+    } catch (e: any) {
+      Alert.alert("❌ Error", e.message || "No se pudo guardar el proveedor");
+    } finally {
+      setGuardando(false);
     }
-    cerrarModal();
   };
 
-  // ── ELIMINAR ────────────────────────────────────────────────
-  const eliminar = () => {
+  const confirmarEliminar = () => {
     if (!proveedorEditando) return;
-    setProveedores((prev) => prev.filter((p) => p.id !== proveedorEditando.id));
-    setPaginaActual(1);
-    cerrarModal();
+    Alert.alert(
+      "Eliminar proveedor",
+      `¿Seguro que deseas eliminar a "${proveedorEditando.nombre}"?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            setGuardando(true);
+            try {
+              await eliminar(proveedorEditando.id);
+              setPaginaActual(1);
+              cerrarModal();
+            } catch (e: any) {
+              Alert.alert(
+                "❌ Error",
+                e.message ||
+                  "No se pudo eliminar. Puede tener movimientos asociados.",
+              );
+            } finally {
+              setGuardando(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -229,6 +183,19 @@ export default function Proveedores() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {error && (
+          <Text
+            style={{
+              color: "#e67e22",
+              textAlign: "center",
+              padding: 8,
+              fontSize: 13,
+            }}
+          >
+            ⚠️ {error}
+          </Text>
+        )}
+
         {/* BUSCADOR */}
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -263,7 +230,13 @@ export default function Proveedores() {
         </View>
 
         {/* LISTA */}
-        {proveedoresPaginados.length === 0 ? (
+        {loading ? (
+          <ActivityIndicator
+            size="large"
+            color="#4CAF50"
+            style={{ marginVertical: 20 }}
+          />
+        ) : proveedoresPaginados.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>🏢</Text>
             <Text style={styles.emptyText}>No se encontraron proveedores</Text>
@@ -343,7 +316,6 @@ export default function Proveedores() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* HEADER MODAL */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {proveedorEditando ? "Editar Proveedor" : "Nuevo Proveedor"}
@@ -353,7 +325,6 @@ export default function Proveedores() {
               </TouchableOpacity>
             </View>
 
-            {/* CAMPOS */}
             <FormInput
               placeholder="Nombre *"
               value={form.nombre}
@@ -413,14 +384,22 @@ export default function Proveedores() {
             )}
 
             <FormButton
-              label={proveedorEditando ? "Guardar cambios" : "Crear proveedor"}
+              label={
+                guardando
+                  ? "Guardando..."
+                  : proveedorEditando
+                    ? "Guardar cambios"
+                    : "Crear proveedor"
+              }
               onPress={guardar}
+              disabled={guardando}
             />
 
             {proveedorEditando && (
               <FormButton
                 label="Eliminar proveedor"
-                onPress={eliminar}
+                onPress={confirmarEliminar}
+                disabled={guardando}
                 style={{
                   backgroundColor: "#f44336",
                   marginTop: 8,

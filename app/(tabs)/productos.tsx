@@ -1,6 +1,9 @@
-import { useState } from "react";
+// Ubicación: app/(tabs)/productos.tsx
+
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,20 +17,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FormButton from "../../components/FormButton";
 import FormInput from "../../components/FormInput";
 import ProductoCard from "../../components/ProductoCard";
-import { useProductos } from "../../hooks/useProductos";
+import { useProductos, type Producto } from "../../hooks/useProductos";
 import { styles } from "../../styles/productos.styles";
-
-type Producto = {
-  id: number;
-  nombre: string;
-  categoria: string;
-  codigo?: string;
-  stock: number;
-  stock_minimo: number;
-  precio_compra: number;
-  precio_venta: number;
-  descripcion?: string;
-};
 
 type FormProducto = {
   nombre: string;
@@ -76,6 +67,55 @@ export default function Productos() {
   const [errores, setErrores] = useState<Partial<FormProducto>>({});
   const [guardando, setGuardando] = useState(false);
 
+  // --- TODOS los hooks van antes de cualquier return condicional ---
+
+  const productosFiltrados = useMemo(() => {
+    return productos.filter((p) => {
+      const coincideBusqueda =
+        p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+        (p.codigo ?? "").toLowerCase().includes(busqueda.toLowerCase());
+      const coincideCategoria =
+        categoriaFiltro === "Todas" || p.categoria === categoriaFiltro;
+      return coincideBusqueda && coincideCategoria;
+    });
+  }, [productos, busqueda, categoriaFiltro]);
+
+  const totalPaginas = Math.ceil(productosFiltrados.length / ITEMS_POR_PAGINA);
+
+  const productosPaginados = useMemo(() => {
+    return productosFiltrados.slice(
+      (paginaActual - 1) * ITEMS_POR_PAGINA,
+      paginaActual * ITEMS_POR_PAGINA,
+    );
+  }, [productosFiltrados, paginaActual]);
+
+  const abrirModalEditar = useCallback((producto: Producto) => {
+    setProductoEditando(producto);
+    setForm({
+      nombre: producto.nombre,
+      categoria: producto.categoria,
+      codigo: producto.codigo ?? "",
+      stock: String(producto.stock),
+      stock_minimo: String(producto.stock_minimo),
+      precio_compra: String(producto.precio_compra),
+      precio_venta: String(producto.precio_venta),
+      descripcion: producto.descripcion ?? "",
+    });
+    setErrores({});
+    setModalVisible(true);
+  }, []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: Producto }) => (
+      <ProductoCard {...item} onPress={() => abrirModalEditar(item)} />
+    ),
+    [abrirModalEditar],
+  );
+
+  const keyExtractor = useCallback((item: Producto) => String(item.id), []);
+
+  // --- Recién aquí puede ir el return condicional ---
+
   if (loading && !productos.length) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -87,21 +127,6 @@ export default function Productos() {
     );
   }
 
-  const productosFiltrados = productos.filter((p) => {
-    const coincideBusqueda =
-      (p.nombre ?? "").toLowerCase().includes(busqueda.toLowerCase()) ||
-      (p.codigo ?? "").toLowerCase().includes(busqueda.toLowerCase());
-    const coincideCategoria =
-      categoriaFiltro === "Todas" || p.categoria === categoriaFiltro;
-    return coincideBusqueda && coincideCategoria;
-  });
-
-  const totalPaginas = Math.ceil(productosFiltrados.length / ITEMS_POR_PAGINA);
-  const productosPaginados = productosFiltrados.slice(
-    (paginaActual - 1) * ITEMS_POR_PAGINA,
-    paginaActual * ITEMS_POR_PAGINA,
-  );
-
   const cambiarPagina = (pagina: number) => {
     if (pagina >= 1 && pagina <= totalPaginas) setPaginaActual(pagina);
   };
@@ -109,22 +134,6 @@ export default function Productos() {
   const abrirModalCrear = () => {
     setProductoEditando(null);
     setForm(formVacio);
-    setErrores({});
-    setModalVisible(true);
-  };
-
-  const abrirModalEditar = (producto: Producto) => {
-    setProductoEditando(producto);
-    setForm({
-      nombre: producto.nombre,
-      categoria: producto.categoria,
-      codigo: producto.codigo ?? "",
-      stock: String(producto.stock),
-      stock_minimo: String(producto.stock_minimo),
-      precio_compra: String(Number(producto.precio_compra ?? 0)),
-      precio_venta: String(Number(producto.precio_venta ?? 0)),
-      descripcion: producto.descripcion ?? "",
-    });
     setErrores({});
     setModalVisible(true);
   };
@@ -189,161 +198,165 @@ export default function Productos() {
     }
   };
 
+  const ListaEncabezado = () => (
+    <>
+      {/* ERROR DE RED */}
+      {error && (
+        <Text
+          style={{
+            color: "#e67e22",
+            textAlign: "center",
+            padding: 8,
+            fontSize: 13,
+          }}
+        >
+          ⚠️ {error}
+        </Text>
+      )}
+
+      {/* BUSCADOR */}
+      <View style={styles.searchContainer}>
+        <Text style={styles.searchIcon}>🔍</Text>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar por nombre o código..."
+          value={busqueda}
+          onChangeText={(t) => {
+            setBusqueda(t);
+            setPaginaActual(1);
+          }}
+          placeholderTextColor="#aaa"
+        />
+      </View>
+
+      {/* FILTRO POR CATEGORÍA */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginBottom: 12 }}
+      >
+        <View style={styles.filterContainer}>
+          {CATEGORIAS.map((cat) => (
+            <TouchableOpacity
+              key={cat}
+              style={[
+                styles.filterChip,
+                categoriaFiltro === cat && styles.filterChipActive,
+              ]}
+              onPress={() => {
+                setCategoriaFiltro(cat);
+                setPaginaActual(1);
+              }}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  categoriaFiltro === cat && styles.filterChipTextActive,
+                ]}
+              >
+                {cat}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      {/* ENCABEZADO */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Productos</Text>
+        <View style={styles.headerRight}>
+          <View style={styles.totalBadge}>
+            <Text style={styles.totalText}>
+              {productosFiltrados.length} registros
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.addButton} onPress={abrirModalCrear}>
+            <Text style={styles.addButtonText}>+ Nuevo</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {loading && productos.length > 0 && (
+        <ActivityIndicator
+          size="small"
+          color="#2e6da4"
+          style={{ marginBottom: 8 }}
+        />
+      )}
+    </>
+  );
+
+  const ListaPie = () => (
+    <>
+      {totalPaginas > 1 && (
+        <View style={styles.pagination}>
+          <TouchableOpacity
+            style={[
+              styles.pageButton,
+              paginaActual === 1 && styles.pageButtonDisabled,
+            ]}
+            onPress={() => cambiarPagina(paginaActual - 1)}
+            disabled={paginaActual === 1}
+          >
+            <Text style={styles.pageButtonText}>‹</Text>
+          </TouchableOpacity>
+          {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((p) => (
+            <TouchableOpacity
+              key={p}
+              style={[
+                styles.pageButton,
+                paginaActual === p && styles.pageButtonActive,
+              ]}
+              onPress={() => cambiarPagina(p)}
+            >
+              <Text
+                style={[
+                  styles.pageButtonText,
+                  paginaActual === p && styles.pageButtonTextActive,
+                ]}
+              >
+                {p}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity
+            style={[
+              styles.pageButton,
+              paginaActual === totalPaginas && styles.pageButtonDisabled,
+            ]}
+            onPress={() => cambiarPagina(paginaActual + 1)}
+            disabled={paginaActual === totalPaginas}
+          >
+            <Text style={styles.pageButtonText}>›</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </>
+  );
+
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScrollView
+      <FlatList
+        data={productosPaginados}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={ListaEncabezado}
+        ListFooterComponent={ListaPie}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyIcon}>📦</Text>
+            <Text style={styles.emptyText}>No se encontraron productos</Text>
+          </View>
+        }
         contentContainerStyle={[
           styles.content,
           { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-      >
-        {error && (
-          <Text
-            style={{
-              color: "#e67e22",
-              textAlign: "center",
-              padding: 8,
-              fontSize: 13,
-            }}
-          >
-            ⚠️ {error}
-          </Text>
-        )}
+      />
 
-        <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar por nombre o código..."
-            value={busqueda}
-            onChangeText={(t) => {
-              setBusqueda(t);
-              setPaginaActual(1);
-            }}
-            placeholderTextColor="#aaa"
-          />
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 12 }}
-        >
-          <View style={styles.filterContainer}>
-            {CATEGORIAS.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[
-                  styles.filterChip,
-                  categoriaFiltro === cat && styles.filterChipActive,
-                ]}
-                onPress={() => {
-                  setCategoriaFiltro(cat);
-                  setPaginaActual(1);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    categoriaFiltro === cat && styles.filterChipTextActive,
-                  ]}
-                >
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Productos</Text>
-          <View style={styles.headerRight}>
-            <View style={styles.totalBadge}>
-              <Text style={styles.totalText}>
-                {productosFiltrados.length} registros
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={abrirModalCrear}
-            >
-              <Text style={styles.addButtonText}>+ Nuevo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {loading && productos.length > 0 && (
-          <ActivityIndicator
-            size="small"
-            color="#2e6da4"
-            style={{ marginBottom: 8 }}
-          />
-        )}
-
-        {productosPaginados.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>📦</Text>
-            <Text style={styles.emptyText}>No se encontraron productos</Text>
-          </View>
-        ) : (
-          productosPaginados.map((p) => (
-            <ProductoCard
-              key={p.id}
-              {...p}
-              codigo={p.codigo ?? "S/C"}
-              precio_venta={Number(p.precio_venta ?? 0)}
-              onPress={() => abrirModalEditar(p)}
-            />
-          ))
-        )}
-
-        {totalPaginas > 1 && (
-          <View style={styles.pagination}>
-            <TouchableOpacity
-              style={[
-                styles.pageButton,
-                paginaActual === 1 && styles.pageButtonDisabled,
-              ]}
-              onPress={() => cambiarPagina(paginaActual - 1)}
-              disabled={paginaActual === 1}
-            >
-              <Text style={styles.pageButtonText}>‹</Text>
-            </TouchableOpacity>
-            {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  styles.pageButton,
-                  paginaActual === p && styles.pageButtonActive,
-                ]}
-                onPress={() => cambiarPagina(p)}
-              >
-                <Text
-                  style={[
-                    styles.pageButtonText,
-                    paginaActual === p && styles.pageButtonTextActive,
-                  ]}
-                >
-                  {p}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={[
-                styles.pageButton,
-                paginaActual === totalPaginas && styles.pageButtonDisabled,
-              ]}
-              onPress={() => cambiarPagina(paginaActual + 1)}
-              disabled={paginaActual === totalPaginas}
-            >
-              <Text style={styles.pageButtonText}>›</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
-
+      {/* MODAL */}
       <Modal
         visible={modalVisible}
         transparent
@@ -378,6 +391,7 @@ export default function Productos() {
               <Text style={styles.errorText}>{errores.nombre}</Text>
             )}
 
+            {/* SELECTOR CATEGORÍA */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
