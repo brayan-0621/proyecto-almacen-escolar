@@ -2,7 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logger } from "./logger";
 import { medirLlamada } from "./medirTiempo";
 
-export const API_URL = "http://192.168.1.101:3000";
+export const API_URL =
+  "https://almacen-nella-api-hua6bahvave4a8an.mexicocentral-01.azurewebsites.net";
 
 async function getHeaders(): Promise<Record<string, string>> {
   const token = await AsyncStorage.getItem("auth_token");
